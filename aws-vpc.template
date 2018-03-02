@@ -137,7 +137,9 @@
         },
         "NumberOfAZs": {
             "AllowedValues": [
-                "2"
+                "2",
+                "3",
+                "4"
             ],
             "Default": "2",
             "Description": "Number of Availability Zones to use in the VPC. This must match your selections in the list of Availability Zones parameter.",
