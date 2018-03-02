@@ -88,7 +88,7 @@
             "Description": "Password for the RDS Database master user password",
             "Default": "ChangeMe123!",
             "MinLength": 8,
-            "AllowedPattern": "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[#%^&+=!]).{8,}$",
+            "AllowedPattern": "^(?=.*[0-9])(?=.*[a-z])(?=.*[A-Z])(?=.*[@#%^&+=!]).{8,}$",
             "NoEcho": "True",
             "MaxLength": 30,
             "Type": "String"
