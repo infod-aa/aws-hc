@@ -1,0 +1,801 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Atlassian HipChat Data Center Oct,30,2016",
+    "Parameters": {
+        "AvailabilityZones": {
+            "Default": "us-east-1c, us-east-1d, us-east-1e",
+            "Description": "List of Availability Zones to use for the subnets in the VPC. Note: The logical order is preserved.",
+            "Type": "CommaDelimitedList"
+        },
+        "VPCID": {
+            "Description": "VPC ID",
+            "Type": "String"
+        },
+        "VPCCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "Default": "10.167.209.0/24",
+            "Description": "CIDR block for the VPC",
+            "Type": "String"
+        },
+        "PublicSubnets": {
+            "Description": "List of public subnets for multi-AZ deployment",
+            "Type": "CommaDelimitedList"
+        },
+        "DBUser": {
+            "Description": "RDS Database master user name",
+            "Type": "String"
+        },
+        "DBName": {
+            "Description": "RDS Database name",
+            "Type": "String"
+        },
+        "DBUserPassword": {
+            "Description": "RDS Database master user password",
+            "NoEcho": "True",
+            "MinLength": 8,
+            "Type": "String"
+        },
+        "DBInstanceType": {
+            "Description": "RDS Database instance type",
+            "Default": "db.t2.micro",
+            "Type": "String"
+        },
+        "ClusterNodeType": {
+            "Description": "HipChat app instance type",
+            "Default": "c4.large",
+            "AllowedValues": ["c4.large", "c4.xlarge", "c4.2xlarge", "c4.4xlarge"],
+            "ConstraintDescription": "Must be a valid EC2 instance class.",
+            "Type": "String"
+        },
+        "AMIID": {
+            "Description": "HipChat AMI ID",
+            "Type": "String"
+        },
+        "KeyPairName": {
+            "Description": "SSH KeyPair name to be used for HipChat app instances",
+            "Type": "String"
+        },
+        "DBInstanceAllocatedStorage": {
+            "Description": "RDS Database allocated storage (in Gb)",
+            "Default": "5",
+            "Type": "String"
+        },
+        "PrivateSubnets": {
+            "Description": "List of private subnets (CommaDelimitedList)",
+            "Type": "CommaDelimitedList"
+        },
+        "PrivateSubnetCIDRs": {
+            "Description": "List of private subnet CIDRs (CommaDelimitedList)",
+            "Type": "CommaDelimitedList"
+        },
+        "CacheClusterType": {
+            "Description": "ElastiCache (redis) instance type",
+            "Default": "cache.m3.medium",
+            "Type": "String"
+        },
+        "NAT1EIP": {
+            "Description": "NAT Gateway 1 EIP",
+            "Default": "",
+            "Type": "String"
+        },
+        "NAT2EIP": {
+            "Description": "NAT Gateway 2 EIP",
+            "Default": "",
+            "Type": "String"
+        },
+        "NAT3EIP": {
+            "Description": "NAT Gateway 3 EIP",
+            "Default": "",
+            "Type": "String"
+        },
+        "NumberOfAZs": {
+            "AllowedValues": [
+                "2"
+            ],
+            "Default": "3",
+            "Description": "Number of Availability Zones to use in the VPC. This must match your selections in the list of Availability Zones parameter.",
+            "Type": "String"
+        },
+        "PublicDns": {
+            "Description": "The URL of your application",
+            "ConstraintDescription": "Must be valid URL",
+            "Type": "String"
+        },
+        "Route53ZoneName": {
+            "Description": "Name of Route53 zone hosted in same aws account",
+            "ConstraintDescription": "Must be valid route53 zone name",
+            "Type": "String"
+        },
+        "SSLCertificateARN": {
+            "Description": "SSL Certificate ARN",
+            "Type": "String"
+        },
+        "ClusterNodeCount": {
+            "Description": "Number of HC App instances",
+            "Type": "String"
+        },
+        "BastionHostAccessCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "Default": "0.0.0.0/0",
+            "Description": "The CIDR IP range that is permitted to access bastion host over ssh and manage the HipChat cluster. Use 0.0.0.0/0 if you want public access.",
+            "Type": "String"
+        },
+        "AccessCIDR": {
+            "AllowedPattern": "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\\/([0-9]|[1-2][0-9]|3[0-2]))$",
+            "Default": "0.0.0.0/0",
+            "Description": "The CIDR IP range that is permitted to access HipChat. Use 0.0.0.0/0 if you want public access.",
+            "Type": "String"
+        }
+    },
+    "Mappings": {
+        "TrustyRegionMap": {
+            "ap-northeast-1": { "64": "ami-d85e7fbf" },
+            "ap-southeast-1": { "64": "ami-0a19a669" },
+            "ap-southeast-2": { "64": "ami-807876e3" },
+            "cn-north-1": { "64": "ami-68cd1b05" },
+            "eu-central-1": { "64": "ami-25a97a4a" },
+            "eu-west-1": { "64": "ami-09447c6f" },
+            "sa-east-1": { "64": "ami-8df695e1" },
+            "us-east-1": { "64": "ami-772aa961" },
+            "us-gov-west-1": { "64": "ami-24008545" },
+            "us-west-1": { "64": "ami-1da8f27d" },
+            "us-west-2": { "64": "ami-7c22b41c" }
+        }
+    },
+    "Conditions": {
+        "R53Condition": {
+            "Fn::Not": [{ "Fn::Equals": ["", { "Ref": "Route53ZoneName" }] }]
+        }
+    },
+    "Resources": {
+        "DBSubnetGroup": {
+            "Type": "AWS::RDS::DBSubnetGroup",
+            "Properties": {
+                "DBSubnetGroupDescription": "HCDC DB subnet group",
+                "SubnetIds": {
+                    "Ref": "PrivateSubnets"
+                },
+                "Tags": []
+            }
+        },
+        "DBSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "HCDC RDS security group",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "SecurityGroupEgress": [{
+                        "CidrIp": {
+                            "Fn::Select": [
+                                "0",
+                                {
+                                    "Ref": "PrivateSubnetCIDRs"
+                                }
+                            ]
+                        },
+                        "FromPort": 5432,
+                        "ToPort": 5432,
+                        "IpProtocol": "tcp"
+                    },
+                    {
+                        "CidrIp": {
+                            "Fn::Select": [
+                                "1",
+                                {
+                                    "Ref": "PrivateSubnetCIDRs"
+                                }
+                            ]
+                        },
+                        "FromPort": 5432,
+                        "ToPort": 5432,
+                        "IpProtocol": "tcp"
+                    },
+                    {
+                        "CidrIp": {
+                            "Fn::Select": [
+                                "2",
+                                {
+                                    "Ref": "PrivateSubnetCIDRs"
+                                }
+                            ]
+                        },
+                        "FromPort": 5432,
+                        "ToPort": 5432,
+                        "IpProtocol": "tcp"
+                    }
+                ],
+                "SecurityGroupIngress": [{
+                        "CidrIp": {
+                            "Fn::Select": [
+                                "0",
+                                {
+                                    "Ref": "PrivateSubnetCIDRs"
+                                }
+                            ]
+                        },
+                        "FromPort": 5432,
+                        "ToPort": 5432,
+                        "IpProtocol": "tcp"
+                    },
+                    {
+                        "CidrIp": {
+                            "Fn::Select": [
+                                "1",
+                                {
+                                    "Ref": "PrivateSubnetCIDRs"
+                                }
+                            ]
+                        },
+                        "FromPort": 5432,
+                        "ToPort": 5432,
+                        "IpProtocol": "tcp"
+                    },
+                    {
+                        "CidrIp": {
+                            "Fn::Select": [
+                                "2",
+                                {
+                                    "Ref": "PrivateSubnetCIDRs"
+                                }
+                            ]
+                        },
+                        "FromPort": 5432,
+                        "ToPort": 5432,
+                        "IpProtocol": "tcp"
+                    }
+                ]
+            }
+        },
+        "DBInstance": {
+            "Type": "AWS::RDS::DBInstance",
+            "Properties": {
+                "Engine": "postgres",
+                "EngineVersion": "9.5.4",
+                "MultiAZ": "True",
+                "PubliclyAccessible": "False",
+                "DBName": { "Ref": "DBName" },
+                "MasterUsername": {
+                    "Ref": "DBUser"
+                },
+                "MasterUserPassword": {
+                    "Ref": "DBUserPassword"
+                },
+                "DBInstanceClass": {
+                    "Ref": "DBInstanceType"
+                },
+                "AllocatedStorage": {
+                    "Ref": "DBInstanceAllocatedStorage"
+                },
+                "StorageType": "gp2",
+                "DBSubnetGroupName": {
+                    "Ref": "DBSubnetGroup"
+                },
+                "Port": 5432,
+                "VPCSecurityGroups": [{
+                    "Fn::GetAtt": ["DBSecurityGroup", "GroupId"]
+                }]
+            }
+        },
+        "ElastiCacheSubnetGroup": {
+            "Type": "AWS::ElastiCache::SubnetGroup",
+            "Properties": {
+                "Description": "HCDC ElastiCache subnet group",
+                "SubnetIds": {
+                    "Ref": "PrivateSubnets"
+                }
+            }
+        },
+        "CacheSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "HCDC ElastiCache security group",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "SecurityGroupEgress": [{
+                        "CidrIp": {
+                            "Fn::Select": [
+                                "0",
+                                {
+                                    "Ref": "PrivateSubnetCIDRs"
+                                }
+                            ]
+                        },
+                        "FromPort": 6379,
+                        "ToPort": 6379,
+                        "IpProtocol": "tcp"
+                    },
+                    {
+                        "CidrIp": {
+                            "Fn::Select": [
+                                "1",
+                                {
+                                    "Ref": "PrivateSubnetCIDRs"
+                                }
+                            ]
+                        },
+                        "FromPort": 6379,
+                        "ToPort": 6379,
+                        "IpProtocol": "tcp"
+                    },
+                    {
+                        "CidrIp": {
+                            "Fn::Select": [
+                                "2",
+                                {
+                                    "Ref": "PrivateSubnetCIDRs"
+                                }
+                            ]
+                        },
+                        "FromPort": 6379,
+                        "ToPort": 6379,
+                        "IpProtocol": "tcp"
+                    }
+                ],
+                "SecurityGroupIngress": [{
+                        "CidrIp": {
+                            "Fn::Select": [
+                                "0",
+                                {
+                                    "Ref": "PrivateSubnetCIDRs"
+                                }
+                            ]
+                        },
+                        "FromPort": 6379,
+                        "ToPort": 6379,
+                        "IpProtocol": "tcp"
+                    },
+                    {
+                        "CidrIp": {
+                            "Fn::Select": [
+                                "1",
+                                {
+                                    "Ref": "PrivateSubnetCIDRs"
+                                }
+                            ]
+                        },
+                        "FromPort": 6379,
+                        "ToPort": 6379,
+                        "IpProtocol": "tcp"
+                    },
+                    {
+                        "CidrIp": {
+                            "Fn::Select": [
+                                "2",
+                                {
+                                    "Ref": "PrivateSubnetCIDRs"
+                                }
+                            ]
+                        },
+                        "FromPort": 6379,
+                        "ToPort": 6379,
+                        "IpProtocol": "tcp"
+                    }
+                ]
+            }
+        },
+        "CacheCluster": {
+            "Type": "AWS::ElastiCache::ReplicationGroup",
+            "Properties": {
+                "ReplicationGroupDescription": "HCDC ElastiCache Cluster",
+                "AutomaticFailoverEnabled": "True",
+                "CacheNodeType": {
+                    "Ref": "CacheClusterType"
+                },
+                "CacheSubnetGroupName": {
+                    "Ref": "ElastiCacheSubnetGroup"
+                },
+                "PreferredCacheClusterAZs": {
+                    "Ref": "AvailabilityZones"
+                },
+                "Engine": "redis",
+                "EngineVersion": "3.2.4",
+                "NumCacheClusters": {
+                    "Ref": "NumberOfAZs"
+                },
+                "Port": 6379,
+                "SecurityGroupIds": [{
+                    "Fn::GetAtt": ["CacheSecurityGroup", "GroupId"]
+                }]
+            }
+        },
+        "FileSystem": {
+            "Type": "AWS::EFS::FileSystem",
+            "Properties": {
+                "PerformanceMode": "generalPurpose"
+            }
+        },
+        "MountTargetPrivateSubnet1AID": {
+            "Type": "AWS::EFS::MountTarget",
+            "Properties": {
+                "FileSystemId": { "Ref": "FileSystem" },
+                "SubnetId": {
+                    "Fn::Select": [
+                        "0",
+                        {
+                            "Ref": "PrivateSubnets"
+                        }
+                    ]
+                },
+                "SecurityGroups": [{ "Ref": "AppSecurityGroup" }]
+            }
+        },
+        "MountTargetPrivateSubnet2AID": {
+            "Type": "AWS::EFS::MountTarget",
+            "Properties": {
+                "FileSystemId": { "Ref": "FileSystem" },
+                "SubnetId": {
+                    "Fn::Select": [
+                        "1",
+                        {
+                            "Ref": "PrivateSubnets"
+                        }
+                    ]
+                },
+                "SecurityGroups": [{ "Ref": "AppSecurityGroup" }]
+            }
+        },
+        "MountTargetPrivateSubnet3AID": {
+            "Type": "AWS::EFS::MountTarget",
+            "Properties": {
+                "FileSystemId": { "Ref": "FileSystem" },
+                "SubnetId": {
+                    "Fn::Select": [
+                        "2",
+                        {
+                            "Ref": "PrivateSubnets"
+                        }
+                    ]
+                },
+                "SecurityGroups": [{ "Ref": "AppSecurityGroup" }]
+            }
+        },
+        "BastionSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Bastion host security group",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "SecurityGroupIngress": [{
+                    "CidrIp": { "Ref": "BastionHostAccessCIDR" },
+                    "FromPort": 22,
+                    "ToPort": 22,
+                    "IpProtocol": "tcp"
+                }]
+            }
+        },
+        "BastionHost": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "ImageId": { "Fn::FindInMap": ["TrustyRegionMap", { "Ref": "AWS::Region" }, "64"] },
+                "InstanceType": "tc.nano",
+                "KeyName": {
+                    "Ref": "KeyPairName"
+                },
+                "SecurityGroupIds": [{ "Ref": "BastionSecurityGroup" }],
+                "SubnetId": {
+                    "Fn::Select": [
+                        "0",
+                        {
+                            "Ref": "PublicSubnets"
+                        }
+                    ]
+                },
+                "Tags": [{
+                    "Key": "Name",
+                    "Value": {
+                        "Fn::Join": [
+                            "", [
+                                "bastion-",
+                                { "Ref": "PublicDns" }
+                            ]
+                        ]
+                    }
+                }],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": ["\n", [
+                            "#cloud-config",
+                            "users:",
+                            "  - default",
+                            "package_upgrade: True",
+                            "system_info:",
+                            "  default_user:",
+                            "     name: admin",
+                            "     lock_passwd: True",
+                            "     gecos: Admin",
+                            "     primary_group: admin",
+                            "     groups: [adm, audio, cdrom, dialout, dip, floppy, netdev, plugdev, sudo, video]",
+                            "     sudo: [\"ALL=(ALL) NOPASSWD:ALL\"]",
+                            "     shell: /bin/bash"
+                        ]]
+                    }
+                }
+            }
+        },
+        "ELBSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "HipChat App server(s) security group",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "SecurityGroupIngress": [{
+                    "CidrIp": { "Ref": "AccessCIDR" },
+                    "FromPort": 443,
+                    "ToPort": 443,
+                    "IpProtocol": "tcp"
+                }]
+            }
+        },
+        "AppSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "HipChat App server(s) security group",
+                "VpcId": {
+                    "Ref": "VPCID"
+                },
+                "SecurityGroupIngress": [{
+                        "SourceSecurityGroupId": { "Ref": "BastionSecurityGroup" },
+                        "FromPort": 22,
+                        "ToPort": 22,
+                        "IpProtocol": "tcp"
+                    },
+                    {
+                        "CidrIp": { "Ref": "VPCCIDR" },
+                        "FromPort": 80,
+                        "ToPort": 80,
+                        "IpProtocol": "tcp"
+                    },
+                    {
+                        "CidrIp": { "Ref": "VPCCIDR" },
+                        "FromPort": 5000,
+                        "ToPort": 6000,
+                        "IpProtocol": "tcp"
+                    },
+                    {
+                        "CidrIp": { "Ref": "VPCCIDR" },
+                        "FromPort": "2049",
+                        "ToPort": "2049",
+                        "IpProtocol": "tcp"
+                    }
+                ]
+            }
+        },
+
+        "HCELB": {
+            "Type": "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Properties": {
+                "CrossZone": "True",
+                "ConnectionSettings": {
+                    "IdleTimeout": "90"
+                },
+                "HealthCheck": {
+                    "HealthyThreshold": "2",
+                    "Interval": "10",
+                    "Target": "HTTP:80/healthcheck",
+                    "Timeout": "5",
+                    "UnhealthyThreshold": "10"
+                },
+                "LBCookieStickinessPolicy": [{
+                    "PolicyName": "LBCookieStickinessPolicy"
+                }],
+                "Listeners": [{
+                    "InstancePort": "80",
+                    "InstanceProtocol": "HTTP",
+                    "LoadBalancerPort": "443",
+                    "PolicyNames": ["LBCookieStickinessPolicy", "ELBSecurityPolicy-2016-08"],
+                    "Protocol": "HTTPS",
+                    "SSLCertificateId": { "Ref": "SSLCertificateARN" }
+                }],
+                "Scheme": "internet-facing",
+                "SecurityGroups": [{ "Ref": "ELBSecurityGroup" }],
+                "Subnets": [{
+                        "Fn::Select": [
+                            "0",
+                            {
+                                "Ref": "PublicSubnets"
+                            }
+                        ]
+                    },
+                    {
+                        "Fn::Select": [
+                            "1",
+                            {
+                                "Ref": "PublicSubnets"
+                            }
+                        ]
+                    },
+                    {
+                        "Fn::Select": [
+                            "2",
+                            {
+                                "Ref": "PublicSubnets"
+                            }
+                        ]
+                    }
+
+                ],
+                "Tags": []
+            }
+        },
+        "ELBRoute53Record": {
+            "Condition": "R53Condition",
+            "Type": "AWS::Route53::RecordSet",
+            "Properties": {
+                "HostedZoneName": { "Ref": "Route53ZoneName" },
+                "Name": { "Ref": "PublicDns" },
+                "ResourceRecords": [
+                    { "Fn::GetAtt": ["HCELB", "DNSName"] }
+                ],
+                "TTL": "60",
+                "Type": "CNAME"
+            }
+        },
+        "HCAppLaunchConfig": {
+            "DependsOn": ["DBInstance", "CacheCluster", "MountTargetPrivateSubnet1AID","MountTargetPrivateSubnet2AID","MountTargetPrivateSubnet3AID"],
+            "Type": "AWS::AutoScaling::LaunchConfiguration",
+            "Metadata": {
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "files": {
+                            "/opt/atlassian/hipchat/datacenter.json": {
+                                "content": {
+                                    "name": { "Ref": "AWS::StackName" },
+                                    "location": { "Ref": "AWS::Region" },
+                                    "public-dns": { "Ref": "PublicDns" },
+                                    "database-server": { "Fn::Join": [":", [{ "Fn::GetAtt": ["DBInstance", "Endpoint.Address"] }, { "Fn::GetAtt": ["DBInstance", "Endpoint.Port"] }]] },
+                                    "database-user": { "Ref": "DBUser" },
+                                    "database-password": { "Ref": "DBUserPassword" },
+                                    "database-name": { "Ref": "DBName" },
+                                    "redis-server": { "Fn::Join": [":", [{ "Fn::GetAtt": ["CacheCluster", "PrimaryEndPoint.Address"] }, { "Fn::GetAtt": ["CacheCluster", "PrimaryEndPoint.Port"] }]] },
+                                    "shared-storage-location": { "Fn::Join": ["", [{ "Ref": "FileSystem" }, ".efs.", { "Ref": "AWS::Region" }, ".amazonaws.com:/"]] }
+                                },
+                                "mode": "000444",
+                                "owner": "root",
+                                "group": "root"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "AssociatePublicIpAddress": "False",
+                "EbsOptimized": "True",
+                "ImageId": { "Ref": "AMIID" },
+                "InstanceMonitoring": "False",
+                "InstanceType": { "Ref": "ClusterNodeType" },
+                "KeyName": { "Ref": "KeyPairName" },
+                "SecurityGroups": [{ "Ref": "AppSecurityGroup" }],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": ["", [
+                            "#!/bin/bash -xe", "\n",
+                            "function error_exit", "\n",
+                            "{", "\n",
+                            "/opt/atlassian/hipchat/virtualenv/bin/cfn-signal -e 1 -r \"$1\" ",
+                            " --stack ", { "Ref": "AWS::StackName" },
+                            " --resource HCAppASG",
+                            " --region ", { "Ref": "AWS::Region" }, "\n",
+                            "  exit 1", "\n",
+                            "}", "\n",
+                            "#execute AWS::CloudFormation::Init", "\n",
+                            {
+                                "Fn::Join": ["", [
+                                    "/opt/atlassian/hipchat/virtualenv/bin/cfn-init -v ",
+                                    " --stack ", { "Ref": "AWS::StackName" },
+                                    " --resource HCAppLaunchConfig",
+                                    " --region ", { "Ref": "AWS::Region" }
+                                ]]
+                            }
+                        ]]
+                    }
+                }
+            }
+        },
+        "HCAppASG": {
+            "Type": "AWS::AutoScaling::AutoScalingGroup",
+            "DependsOn": "HCAppLaunchConfig",
+            "Properties": {
+                "AvailabilityZones": { "Ref": "AvailabilityZones" },
+                "DesiredCapacity": { "Ref": "ClusterNodeCount" },
+                "HealthCheckGracePeriod": "2000",
+                "HealthCheckType": "ELB",
+                "LaunchConfigurationName": { "Ref": "HCAppLaunchConfig" },
+                "LoadBalancerNames": [{ "Ref": "HCELB" }],
+                "MaxSize": { "Ref": "ClusterNodeCount" },
+                "MinSize": { "Ref": "ClusterNodeCount" },
+                "Tags": [{
+                    "Key": "Name",
+                    "Value": { "Ref": "PublicDns" },
+                    "PropagateAtLaunch": "true"
+                }],
+                "VPCZoneIdentifier": { "Ref": "PrivateSubnets" }
+            },
+            "CreationPolicy": {
+                "AutoScalingCreationPolicy": {
+                    "MinSuccessfulInstancesPercent": "100"
+                },
+                "ResourceSignal": {
+                    "Count": { "Ref": "ClusterNodeCount" },
+                    "Timeout": "PT60M"
+                }
+            },
+            "UpdatePolicy": {
+                "AutoScalingReplacingUpdate": {
+                    "WillReplace": "false"
+                },
+                "AutoScalingRollingUpdate": {
+                    "MaxBatchSize": "1",
+                    "MinInstancesInService": "2",
+                    "PauseTime": "PT60M",
+                    "WaitOnResourceSignals": "true"
+                }
+            }
+        }
+    },
+    "Outputs": {
+        "BastionHostIP": {
+            "Value": {
+                "Fn::GetAtt": ["BastionHost", "PublicIp"]
+            },
+            "Description": "Bastion host IP"
+        },
+        "ELB": {
+            "Value": {
+                "Fn::GetAtt": ["HCELB", "DNSName"]
+            },
+            "Description": "ELB DNS Name"
+        },
+        "DBInstance": {
+            "Description": "RDS Instance ID",
+            "Value": {
+                "Ref": "DBInstance"
+            }
+        },
+        "RDSEndpoint": {
+            "Description": "RDS endpoint",
+            "Value": {
+                "Fn::GetAtt": ["DBInstance", "Endpoint.Address"]
+            }
+        },
+        "RDSEndpointPort": {
+            "Description": "RDS endpoint port",
+            "Value": {
+                "Fn::GetAtt": ["DBInstance", "Endpoint.Port"]
+            }
+        },
+        "CacheCluster": {
+            "Description": "ElastiCache Instance ID",
+            "Value": {
+                "Ref": "CacheCluster"
+            }
+        },
+        "CachePrimaryEndpoint": {
+            "Description": "ElastiCache cluster primary endpoint",
+            "Value": {
+                "Fn::GetAtt": ["CacheCluster", "PrimaryEndPoint.Address"]
+            }
+        },
+        "CachePrimaryEndpointPort": {
+            "Description": "ElastiCache cluster primary endpoint port",
+            "Value": {
+                "Fn::GetAtt": ["CacheCluster", "PrimaryEndPoint.Port"]
+            }
+        },
+        "CacheReadEndpoints": {
+            "Description": "ElastiCache cluster read endpoints list",
+            "Value": {
+                "Fn::GetAtt": ["CacheCluster", "ReadEndPoint.Addresses"]
+            }
+        },
+        "CacheReadEndpointsPorts": {
+            "Description": "ElastiCache cluster read endpoints ports",
+            "Value": {
+                "Fn::GetAtt": ["CacheCluster", "ReadEndPoint.Ports"]
+            }
+        }
+    }
+}
